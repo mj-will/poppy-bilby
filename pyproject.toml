@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=45", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poppy-bilby"
+authors = [
+    {name = "Michael J. Williams", email = "michaeljw1@googlemail.com"},
+]
+description = ""
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "bilby>=2.3.0",
+    "poppy",
+]
+
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[tool.setuptools_scm]
+
+[tool.black]
+line-length = 79
+
+[project.entry-points."bilby.samplers"]
+poppy = "poppy_bilby.plugin:Poppy"

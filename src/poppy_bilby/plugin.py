@@ -13,6 +13,8 @@ import poppy
 from .utils import (
     get_poppy_log_likelihood,
     get_poppy_log_prior,
+    get_prior_bounds,
+    get_periodic_parameters,
     samples_from_bilby_result,
 )
 
@@ -59,6 +61,12 @@ class Poppy(Sampler):
 
         n_samples = self.kwargs.pop("n_samples")
 
+        base_transforms = {
+            p: "periodic" for p in get_periodic_parameters(self.priors)
+        }
+        transforms = self.kwargs.pop("transforms")
+        base_transforms.update(transforms)
+
         pop = poppy.Poppy(
             log_likelihood=get_poppy_log_likelihood(
                 self.likelihood,
@@ -69,6 +77,9 @@ class Poppy(Sampler):
                 self.priors, self.search_parameter_keys
             ),
             dims=self.ndim,
+            parameters=self.search_parameter_keys,
+            prior_bounds=get_prior_bounds(self.priors, self.search_parameter_keys),
+            transforms=base_transforms,
             **self.kwargs,
         )
 

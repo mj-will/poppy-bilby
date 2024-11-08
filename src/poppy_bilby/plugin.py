@@ -39,7 +39,6 @@ class Poppy(Sampler):
     def default_kwargs(self) -> dict:
         """Dictionary of default keyword arguments."""
         return dict(
-            backend="torch",
             n_samples=1000,
             initial_result_file=None,
             flow_matching=False,
@@ -47,9 +46,6 @@ class Poppy(Sampler):
 
     def run_sampler(self) -> dict:
         """Run the sampler."""
-        backed_name = self.kwargs.pop("backend")
-        poppy.set_backend(backed_name)
-
         resume = self.kwargs.pop("resume")
 
         initial_result = bilby.core.result.read_in_result(

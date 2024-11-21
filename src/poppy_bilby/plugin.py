@@ -2,6 +2,7 @@
 
 Here we demonstrate the how to implement the class.
 """
+from functools import partial
 
 import bilby
 from bilby.core.utils.random import rng
@@ -11,8 +12,7 @@ import os
 import poppy
 
 from .utils import (
-    get_poppy_log_likelihood,
-    get_poppy_log_prior,
+    get_poppy_functions,
     get_prior_bounds,
     get_periodic_parameters,
     samples_from_bilby_result,
@@ -42,11 +42,12 @@ class Poppy(Sampler):
             n_samples=1000,
             initial_result_file=None,
             flow_matching=False,
+            npool=None,
         )
 
     def run_sampler(self) -> dict:
         """Run the sampler."""
-        resume = self.kwargs.pop("resume")
+        self.kwargs.pop("resume", None)
 
         initial_result = bilby.core.result.read_in_result(
             self.kwargs.pop("initial_result_file")
@@ -60,21 +61,31 @@ class Poppy(Sampler):
         base_transforms = {
             p: "periodic" for p in get_periodic_parameters(self.priors)
         }
-        transforms = self.kwargs.pop("transforms")
+        transforms = self.kwargs.pop("transforms", {})
         base_transforms.update(transforms)
 
+        funcs = get_poppy_functions(
+            self.likelihood,
+            self.priors,
+            self.search_parameter_keys,
+            use_ratio=self.use_ratio,
+        )
+
+        prior_bounds = get_prior_bounds(self.priors, self.search_parameter_keys)
+
+        self._setup_pool()
+
+        if self.pool:
+            log_likelhood_fn = partial(funcs.log_likelihood, map_fn=self.pool.map)
+        else:
+            log_likelhood_fn = funcs.log_likelihood
+
         pop = poppy.Poppy(
-            log_likelihood=get_poppy_log_likelihood(
-                self.likelihood,
-                self.search_parameter_keys,
-                use_ratio=self.use_ratio,
-            ),
-            log_prior=get_poppy_log_prior(
-                self.priors, self.search_parameter_keys
-            ),
+            log_likelihood=log_likelhood_fn,
+            log_prior=funcs.log_prior,
             dims=self.ndim,
             parameters=self.search_parameter_keys,
-            prior_bounds=get_prior_bounds(self.priors, self.search_parameter_keys),
+            prior_bounds=prior_bounds,
             transforms=base_transforms,
             **self.kwargs,
         )
@@ -138,3 +149,16 @@ class Poppy(Sampler):
                         f"argument of '{self.__class__.__name__}'. "
                     )
                 )
+    def _translate_kwargs(self, kwargs):
+        """Translate the keyword arguments"""
+        if "npool" not in kwargs:
+            for equiv in self.npool_equiv_kwargs:
+                if equiv in kwargs:
+                    kwargs["npool"] = kwargs.pop(equiv)
+                    break
+            # If nothing was found, set to npool but only if it is larger
+            # than 1
+            else:
+                if self._npool > 1:
+                    kwargs["npool"] = self._npool
+        super()._translate_kwargs(kwargs)

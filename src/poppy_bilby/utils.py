@@ -1,44 +1,80 @@
+from bilby.core.likelihood import Likelihood
+from bilby.core.prior import PriorDict
 from collections import namedtuple
-from poppy.samples import from_numpy, to_numpy
+from dataclasses import dataclass
 import numpy as np
 
 
 Inputs = namedtuple(
     "Inputs", ["log_likelihood", "log_prior", "dims", "parameters", "prior_bounds", "periodic_parameters"]
 )
+Functions = namedtuple("Functions", ["log_likelihood", "log_prior"])
+
+@dataclass
+class GlobalFunctions:
+    bilby_likelihood: Likelihood
+    bilby_priors: PriorDict
+    parameters: list
+    use_ratio: bool
 
 
-def get_poppy_log_likelihood(
-    bilby_likelihood, parameters, use_ratio: bool = False, map_fn=map
+_global_functions = GlobalFunctions(None, None, [], False)
+
+
+def update_global_functions(
+    bilby_likelihood: Likelihood,
+    bilby_priors: PriorDict,
+    parameters: list[str],
+    use_ratio: bool,
+):
+    """Update the global functions for log likelihood and log prior."""
+    global _global_functions
+    _global_functions.bilby_likelihood = bilby_likelihood
+    _global_functions.bilby_priors = bilby_priors
+    _global_functions.parameters = parameters
+    _global_functions.use_ratio = use_ratio
+
+
+def _global_log_likelihood(x):
+    theta = dict(zip(_global_functions.parameters, x))
+    _global_functions.bilby_likelihood.parameters.update(theta)
+
+    if _global_functions.use_ratio:
+        return _global_functions.bilby_likelihood.log_likelihood_ratio()
+    else:
+        return _global_functions.bilby_likelihood.log_likelihood()
+
+
+def get_poppy_functions(
+    bilby_likelihood,
+    bilby_priors,
+    parameters,
+    use_ratio: bool = False,
 ):
     """Get the log likelihood function for a bilby likelihood object."""
-    def fn(x):
-        theta = dict(zip(parameters, x))
-        bilby_likelihood.parameters.update(theta)
-        if use_ratio:
-            return bilby_likelihood.log_likelihood_ratio()
-        else:
-            return bilby_likelihood.log_likelihood()
 
-    def log_likelihood(samples):
+    update_global_functions(
+        bilby_likelihood, bilby_priors, parameters, use_ratio
+    )
+
+    def log_likelihood(samples, map_fn=map):
         logl = -np.inf * np.ones(len(samples.x))
         # Only evaluate the log likelihood for finite log prior
-        mask = np.isfinite(to_numpy(samples.log_prior), dtype=bool)
+        mask = np.isfinite(samples.log_prior, dtype=bool)
         logl[mask] = np.fromiter(
-            map_fn(fn, to_numpy(samples.x)[mask, :]), dtype=float,
+            map_fn(
+                _global_log_likelihood,
+                samples.x[mask, :],
+            ), dtype=float,
         )
-        return from_numpy(logl)
+        return logl
 
-    return log_likelihood
-
-
-def get_poppy_log_prior(bilby_priors, parameters):
-    """Get the log prior function for a bilby prior object"""
     def log_prior(samples):
-        x = dict(zip(parameters, to_numpy(samples.x).T))
-        return from_numpy(bilby_priors.ln_prob(x, axis=0))
+        x = dict(zip(parameters, np.array(samples.x).T))
+        return bilby_priors.ln_prob(x, axis=0)
 
-    return log_prior
+    return Functions(log_likelihood=log_likelihood, log_prior=log_prior)
+
 
 def get_prior_bounds(bilby_priors, parameters):
     return {p: np.array([bilby_priors[p].minimum, bilby_priors[p].maximum]) for p in parameters}
@@ -49,11 +85,11 @@ def get_periodic_parameters(bilby_priors):
 
 def samples_from_bilby_result(result, parameters: str = None):
     """Get samples from a bilby result object."""
-    from poppy.samples.numpy import NumpySamples
+    from poppy.samples import Samples
     # TODO: add option to load nested samples
     if parameters is None:
         parameters = result.priors.non_fixed_keys
-    return NumpySamples(
+    return Samples(
         x=result.posterior[parameters].to_numpy(),
         parameters=parameters,
     )
@@ -73,7 +109,7 @@ def load_bilby_pipe_ini(config_file: str, data_dump_file: str):
 
 
 def get_inputs_from_bilby_pipe_ini(
-    config_file: str, data_dump_file: str, use_ratio: bool = False, map_fn=map
+    config_file: str, data_dump_file: str, use_ratio: bool = False,
 ):
     """Get the poppy inputs from a bilby_pipe ini file.
 
@@ -84,13 +120,12 @@ def get_inputs_from_bilby_pipe_ini(
     """
     bilby_likelihood, bilby_priors = load_bilby_pipe_ini(config_file, data_dump_file)
     parameters = bilby_priors.non_fixed_keys
-    log_likelihood = get_poppy_log_likelihood(
-        bilby_likelihood, parameters, use_ratio=use_ratio, map_fn=map_fn
+    funcs = get_poppy_functions(
+        bilby_likelihood, bilby_priors, parameters, use_ratio=use_ratio
     )
-    log_prior = get_poppy_log_prior(bilby_priors, parameters)
     return Inputs(
-        log_likelihood=log_likelihood,
-        log_prior=log_prior,
+        log_likelihood=funcs.log_likelihood,
+        log_prior=funcs.log_prior,
         dims=len(parameters),
         parameters=parameters,
         prior_bounds=get_prior_bounds(bilby_priors, parameters),

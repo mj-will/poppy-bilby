@@ -1,7 +1,10 @@
 from bilby.core.likelihood import Likelihood
 from bilby.core.prior import PriorDict
+from bilby.core.utils.log import logger as bilby_logger
 from collections import namedtuple
+from contextlib import contextmanager
 from dataclasses import dataclass
+import os
 import numpy as np
 
 
@@ -60,6 +63,8 @@ def get_poppy_functions(
     def log_likelihood(samples, map_fn=map):
         logl = -np.inf * np.ones(len(samples.x))
         # Only evaluate the log likelihood for finite log prior
+        if samples.log_prior is None:
+            raise RuntimeError("log-prior has not been evaluated!")
         mask = np.isfinite(samples.log_prior, dtype=bool)
         logl[mask] = np.fromiter(
             map_fn(
@@ -95,21 +100,44 @@ def samples_from_bilby_result(result, parameters: str = None):
     )
 
 
-def load_bilby_pipe_ini(config_file: str, data_dump_file: str):
+@contextmanager
+def temporary_logger_level(logger, level: str | None):
+    initial_level = logger.level
+    if level is not None:
+        logger.setLevel(level)
+    try:
+        yield initial_level
+    finally:
+        logger.setLevel(initial_level)
+
+
+def load_bilby_pipe_ini(
+    config_file: str,
+    data_dump_file: str,
+    suppress_bilby_logger: bool = True,
+):
     """Load a bilby_pipe ini file and return the likelihood and priors."""
     from bilby_pipe import data_analysis
+    from bilby_pipe.utils import logger as bilby_pipe_logger
+    from bilby.core.utils.log import logger as bilby_logger
 
-    parser = data_analysis.create_analysis_parser()
-    args, unknown_args = data_analysis.parse_args([config_file, "--data-dump-file", data_dump_file], parser)
-    analysis = data_analysis.DataAnalysisInput(args, unknown_args)
-    likelihood, priors = analysis.get_likelihood_and_priors()
-    priors.convert_floats_to_delta_functions()
-    likelihood.parameters.update(priors.sample())
-    return likelihood, priors
+    with temporary_logger_level(
+        bilby_pipe_logger, 0 if suppress_bilby_logger else None
+    ), temporary_logger_level(bilby_logger, 0 if suppress_bilby_logger else None):
+        parser = data_analysis.create_analysis_parser()
+        args, unknown_args = data_analysis.parse_args([config_file, "--data-dump-file", data_dump_file], parser)
+        analysis = data_analysis.DataAnalysisInput(args, unknown_args)
+        likelihood, priors = analysis.get_likelihood_and_priors()
+        priors.convert_floats_to_delta_functions()
+        likelihood.parameters.update(priors.sample())
+        return likelihood, priors
 
 
 def get_inputs_from_bilby_pipe_ini(
-    config_file: str, data_dump_file: str, use_ratio: bool = False,
+    config_file: str,
+    data_dump_file: str,
+    use_ratio: bool = False,
+    suppress_bilby_logger: bool = True,
 ):
     """Get the poppy inputs from a bilby_pipe ini file.
 
@@ -118,7 +146,16 @@ def get_inputs_from_bilby_pipe_ini(
     namedtuple
         A namedtuple with the log_likelihood and log_prior functions.
     """
-    bilby_likelihood, bilby_priors = load_bilby_pipe_ini(config_file, data_dump_file)
+    if not os.path.exists(config_file):
+        raise OSError("Config file does not exist!")
+    if not os.path.exists(data_dump_file):
+        raise OSError("Data dump does not exist!")
+
+    bilby_likelihood, bilby_priors = load_bilby_pipe_ini(
+        config_file,
+        data_dump_file,
+        suppress_bilby_logger=suppress_bilby_logger
+    )
     parameters = bilby_priors.non_fixed_keys
     funcs = get_poppy_functions(
         bilby_likelihood, bilby_priors, parameters, use_ratio=use_ratio

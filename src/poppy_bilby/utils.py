@@ -11,10 +11,14 @@ import numpy as np
 Inputs = namedtuple(
     "Inputs", ["log_likelihood", "log_prior", "dims", "parameters", "prior_bounds", "periodic_parameters"]
 )
+"""Container for the inputs to the poppy sampler."""
+
 Functions = namedtuple("Functions", ["log_likelihood", "log_prior"])
+"""Container for the log likelihood and log prior functions."""
 
 @dataclass
 class GlobalFunctions:
+    """Dataclass to store global functions."""
     bilby_likelihood: Likelihood
     bilby_priors: PriorDict
     parameters: list
@@ -81,11 +85,22 @@ def get_poppy_functions(
     return Functions(log_likelihood=log_likelihood, log_prior=log_prior)
 
 
-def get_prior_bounds(bilby_priors, parameters):
+def get_prior_bounds(bilby_priors: PriorDict, parameters: list[str]) -> dict[str: np.ndarray]:
+    """Get a dictionary of prior bounds."""
     return {p: np.array([bilby_priors[p].minimum, bilby_priors[p].maximum]) for p in parameters}
 
-def get_periodic_parameters(bilby_priors):
-    return [p for p in bilby_priors.keys() if bilby_priors[p].boundary == "periodic"]
+
+def get_periodic_parameters(bilby_priors: PriorDict) -> list[str]:
+    """Determine which parameters are periodic."""
+    parameters = []
+    for p in bilby_priors.keys():
+        # Skip fixed parameters
+        try:
+            if bilby_priors[p].boundary == "periodic":
+                parameters.append(p)
+        except AttributeError:
+            pass
+    return parameters
 
 
 def samples_from_bilby_result(result, parameters: str = None):
@@ -102,6 +117,15 @@ def samples_from_bilby_result(result, parameters: str = None):
 
 @contextmanager
 def temporary_logger_level(logger, level: str | None):
+    """Temporarily set the logger level.
+
+    Example usage
+
+    ```python
+    with temporary_logger_level(logger, "DEBUG"):
+        # Do something
+    ```
+    """
     initial_level = logger.level
     if level is not None:
         logger.setLevel(level)

@@ -8,14 +8,17 @@ import bilby
 from bilby.core.utils.random import rng
 from bilby.core.utils.log import logger
 from bilby.core.sampler.base_sampler import Sampler
+import copy
 import os
 import poppy
+from poppy.utils import configure_logger, PoolHandler
 
 from .utils import (
     get_poppy_functions,
     get_prior_bounds,
     get_periodic_parameters,
     samples_from_bilby_result,
+    samples_from_bilby_priors,
 )
 
 
@@ -23,6 +26,13 @@ class Poppy(Sampler):
     """Bilby wrapper for poppy.
 
     Poppy: https://github.com/mj-will/bayesian-poppy
+
+    Since poppy is designed to be called in multiple steps, specific keyword
+    arguments are used for each step:
+    - `fit_kwargs` for the fit step
+    - `sample_kwargs` for the sampling step
+    In addition, there are custom arguments for handling e.g. logging:
+    - `poppy_log_level` for the logging level of poppy
     """
 
     sampler_name = "poppy"
@@ -44,25 +54,37 @@ class Poppy(Sampler):
             flow_matching=False,
             npool=None,
         )
-
-    def run_sampler(self) -> dict:
-        """Run the sampler."""
-        self.kwargs.pop("resume", None)
-
-        initial_result = bilby.core.result.read_in_result(
-            self.kwargs.pop("initial_result_file")
-        )
+    
+    def read_initial_samples(self, initial_result_file):
+        initial_result = bilby.core.result.read_in_result(initial_result_file)
         initial_samples = samples_from_bilby_result(
             initial_result, self.search_parameter_keys
         )
+        return initial_samples
+    
+    def run_sampler(self) -> dict:
+        """Run the sampler."""
 
-        n_samples = self.kwargs.pop("n_samples")
+        kwargs = copy.deepcopy(self.kwargs)
 
-        base_transforms = {
-            p: "periodic" for p in get_periodic_parameters(self.priors)
-        }
-        transforms = self.kwargs.pop("transforms", {})
-        base_transforms.update(transforms)
+        kwargs.pop("resume", None)
+        n_samples = kwargs.pop("n_samples")
+
+        initial_result_file = kwargs.pop("initial_result_file", None)
+        if initial_result_file is not None:
+            logger.info(
+                f"Initial samples will be read from {initial_result_file}."
+            )
+
+            initial_samples = self.read_initial_samples(initial_result_file)
+        else:
+            logger.info("Initial samples will be drawn from the prior.")
+            n_initial_samples = kwargs.pop("n_initial_samples", 10_000)
+            initial_samples = samples_from_bilby_priors(
+                self.priors, n_initial_samples, parameters=self.search_parameter_keys
+            )
+
+        periodic_parameters = [p for p in get_periodic_parameters(self.priors)]
 
         funcs = get_poppy_functions(
             self.likelihood,
@@ -80,33 +102,70 @@ class Poppy(Sampler):
         else:
             log_likelhood_fn = funcs.log_likelihood
 
+        sample_kwargs = kwargs.pop("sample_kwargs", {})
+        fit_kwargs = kwargs.pop("fit_kwargs", {})
+
+        configure_logger(log_level=kwargs.pop("poppy_log_level", "INFO"))
+
+        # Should handle these properly
+        kwargs.pop("npool", None)
+        kwargs.pop("pool", None)
+        kwargs.pop("sampling_seed", None)
+
+        logger.info(f"Creating poppy instance with kwargs: {kwargs}")
         pop = poppy.Poppy(
             log_likelihood=log_likelhood_fn,
             log_prior=funcs.log_prior,
             dims=self.ndim,
             parameters=self.search_parameter_keys,
             prior_bounds=prior_bounds,
-            transforms=base_transforms,
-            **self.kwargs,
+            periodic_parameters=periodic_parameters,
+            **kwargs,
         )
 
-        history = pop.fit(initial_samples)
+        logger.info(f"Fitting poppy with kwargs: {fit_kwargs}")
+        history = pop.fit(initial_samples, **fit_kwargs)
 
         if self.plot:
-            history.plot_loss().savefig(os.path.join(self.outdir + "loss.png"))
+            history.plot_loss().savefig(os.path.join(self.outdir, f"{self.label}_loss.png"))
 
-        samples = pop.sample_posterior(n_samples).to_numpy()
-        iid_samples = samples.rejection_sample(rng=rng)
+        logger.info(f"Sampling from posterior with kwargs: {sample_kwargs}")
+
+        self._setup_pool()
+
+        with PoolHandler(pop, self.pool, close_pool=False):
+            samples, sampling_history = pop.sample_posterior(
+                n_samples,
+                return_history=True,
+                **sample_kwargs
+            )
+            samples = samples.to_numpy()
+
+        self._close_pool()
+        
+        if self.plot:
+            sampling_history.plot().savefig(
+                os.path.join(self.outdir, f"{self.label}_sampling_history.png")
+            )
+
+
+        if hasattr(samples, "log_w") and samples.log_w is not None:
+            iid_samples = samples.rejection_sample(rng=rng)
+        else:
+            iid_samples = samples
 
         self.result.samples = iid_samples.x
+
         self.result.nested_samples = samples.to_dataframe(flat=True)
         self.result.nested_samples["log_likelihood"] = samples.log_likelihood
         self.result.nested_samples["log_prior"] = samples.log_prior
-        self.result.nested_samples["weights"] = samples.weights
+        if hasattr(samples, "weights") and samples.weights is not None:
+            self.result.nested_samples["weights"] = samples.weights
+
         self.result.log_likelihood_evaluations = iid_samples.log_likelihood
         self.result.log_prior_evaluations = iid_samples.log_prior
-        self.result.log_evidence = samples.log_evidence
-        self.result.log_evidence_err = samples.log_evidence_error
+        self.result.log_evidence = iid_samples.log_evidence
+        self.result.log_evidence_err = iid_samples.log_evidence_error
         return self.result
 
     @classmethod
@@ -130,7 +189,10 @@ class Poppy(Sampler):
         list
             List of directory names.
         """
-        filenames = [os.path.join(outdir, "loss.png")]
+        filenames = [
+            os.path.join(outdir, f"{label}_loss.png"),
+            os.path.join(outdir, f"{label}_sampling_history.png")
+        ]
         dirs = []
         return filenames, dirs
 

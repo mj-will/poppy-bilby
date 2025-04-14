@@ -1,6 +1,5 @@
 from bilby.core.likelihood import Likelihood
 from bilby.core.prior import PriorDict
-from bilby.core.utils.log import logger as bilby_logger
 from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -111,6 +110,31 @@ def samples_from_bilby_result(result, parameters: str = None):
         parameters = result.priors.non_fixed_keys
     return Samples(
         x=result.posterior[parameters].to_numpy(),
+        parameters=parameters,
+    )
+
+
+def samples_from_bilby_priors(
+    bilby_priors: PriorDict, n_samples: int, parameters: str = None
+):
+    """Get samples from a bilby prior object.
+    
+    Parameters
+    ----------
+    bilby_priors : PriorDict
+        The bilby prior object.
+    n_samples : int
+        The number of samples to draw.
+    parameters : str
+        The parameters to sample. If None, all parameters will be sampled.
+    """
+    from poppy.samples import Samples
+    if parameters is None:
+        parameters = prior.non_fixed_keys
+    theta = bilby_priors.sample(size=n_samples)
+    x = np.array([theta[p] for p in parameters]).T
+    return Samples(
+        x=x,
         parameters=parameters,
     )
 

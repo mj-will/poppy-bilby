@@ -2,6 +2,7 @@
 
 Here we demonstrate the how to implement the class.
 """
+
 from functools import partial
 
 import bilby
@@ -11,6 +12,7 @@ from bilby.core.sampler.base_sampler import Sampler
 import copy
 import os
 import poppy
+from poppy.samples import Samples
 from poppy.utils import configure_logger, PoolHandler
 
 from .utils import (
@@ -54,14 +56,33 @@ class Poppy(Sampler):
             flow_matching=False,
             npool=None,
         )
-    
-    def read_initial_samples(self, initial_result_file):
+
+    def read_initial_samples(
+        self,
+        initial_result_file: str,
+        parameters_to_sample: list[str] = None,
+    ) -> Samples:
+        """Read the initial samples from a bilby result file.
+
+        If parameters are missing, they will be drawn from the prior.
+
+        Parameters
+        ----------
+        initial_result_file : str
+            The path to the initial result file.
+        parameters_to_sample : list
+            List of parameters to sample from the prior regardless of whether
+            they are in the initial result file.
+        """
         initial_result = bilby.core.result.read_in_result(initial_result_file)
         initial_samples = samples_from_bilby_result(
-            initial_result, self.search_parameter_keys
+            initial_result,
+            bilby_priors=self.priors,
+            parameters=self.search_parameter_keys,
+            parameters_to_sample=parameters_to_sample,
         )
         return initial_samples
-    
+
     def run_sampler(self) -> dict:
         """Run the sampler."""
 
@@ -69,22 +90,29 @@ class Poppy(Sampler):
 
         kwargs.pop("resume", None)
         n_samples = kwargs.pop("n_samples")
+        n_initial_samples = kwargs.pop("n_initial_samples", 10_000)
+        parameters_to_sample = kwargs.pop("parameters_to_sample", None)
 
         initial_result_file = kwargs.pop("initial_result_file", None)
         if initial_result_file is not None:
-            logger.info(
-                f"Initial samples will be read from {initial_result_file}."
-            )
+            logger.info(f"Initial samples will be read from {initial_result_file}.")
 
-            initial_samples = self.read_initial_samples(initial_result_file)
+            initial_samples = self.read_initial_samples(
+                initial_result_file,
+                parameters_to_sample=parameters_to_sample,
+            )
         else:
             logger.info("Initial samples will be drawn from the prior.")
-            n_initial_samples = kwargs.pop("n_initial_samples", 10_000)
             initial_samples = samples_from_bilby_priors(
                 self.priors, n_initial_samples, parameters=self.search_parameter_keys
             )
 
-        periodic_parameters = [p for p in get_periodic_parameters(self.priors)]
+        disable_periodic_parameters = kwargs.pop("disable_periodic_parameters", False)
+
+        if disable_periodic_parameters:
+            periodic_parameters = []
+        else:
+            periodic_parameters = [p for p in get_periodic_parameters(self.priors)]
 
         funcs = get_poppy_functions(
             self.likelihood,
@@ -127,7 +155,9 @@ class Poppy(Sampler):
         history = pop.fit(initial_samples, **fit_kwargs)
 
         if self.plot:
-            history.plot_loss().savefig(os.path.join(self.outdir, f"{self.label}_loss.png"))
+            history.plot_loss().savefig(
+                os.path.join(self.outdir, f"{self.label}_loss.png")
+            )
 
         logger.info(f"Sampling from posterior with kwargs: {sample_kwargs}")
 
@@ -135,19 +165,16 @@ class Poppy(Sampler):
 
         with PoolHandler(pop, self.pool, close_pool=False):
             samples, sampling_history = pop.sample_posterior(
-                n_samples,
-                return_history=True,
-                **sample_kwargs
+                n_samples, return_history=True, **sample_kwargs
             )
             samples = samples.to_numpy()
 
         self._close_pool()
-        
+
         if self.plot:
             sampling_history.plot().savefig(
                 os.path.join(self.outdir, f"{self.label}_sampling_history.png")
             )
-
 
         if hasattr(samples, "log_w") and samples.log_w is not None:
             iid_samples = samples.rejection_sample(rng=rng)
@@ -191,7 +218,7 @@ class Poppy(Sampler):
         """
         filenames = [
             os.path.join(outdir, f"{label}_loss.png"),
-            os.path.join(outdir, f"{label}_sampling_history.png")
+            os.path.join(outdir, f"{label}_sampling_history.png"),
         ]
         dirs = []
         return filenames, dirs
@@ -211,6 +238,7 @@ class Poppy(Sampler):
                         f"argument of '{self.__class__.__name__}'. "
                     )
                 )
+
     def _translate_kwargs(self, kwargs):
         """Translate the keyword arguments"""
         if "npool" not in kwargs:

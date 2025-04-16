@@ -126,9 +126,9 @@ class Poppy(Sampler):
         self._setup_pool()
 
         if self.pool:
-            log_likelhood_fn = partial(funcs.log_likelihood, map_fn=self.pool.map)
+            log_likelihood_fn = partial(funcs.log_likelihood, map_fn=self.pool.map)
         else:
-            log_likelhood_fn = funcs.log_likelihood
+            log_likelihood_fn = funcs.log_likelihood
 
         sample_kwargs = kwargs.pop("sample_kwargs", {})
         fit_kwargs = kwargs.pop("fit_kwargs", {})
@@ -142,7 +142,7 @@ class Poppy(Sampler):
 
         logger.info(f"Creating poppy instance with kwargs: {kwargs}")
         pop = poppy.Poppy(
-            log_likelihood=log_likelhood_fn,
+            log_likelihood=log_likelihood_fn,
             log_prior=funcs.log_prior,
             dims=self.ndim,
             parameters=self.search_parameter_keys,

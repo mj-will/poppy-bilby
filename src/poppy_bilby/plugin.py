@@ -131,6 +131,8 @@ class Poppy(Sampler):
             log_likelihood_fn = funcs.log_likelihood
 
         sample_kwargs = kwargs.pop("sample_kwargs", {})
+        if n_final_samples := kwargs.pop("n_final_samples", None):
+            sample_kwargs["n_final_samples"] = n_final_samples
         fit_kwargs = kwargs.pop("fit_kwargs", {})
 
         configure_logger(log_level=kwargs.pop("poppy_log_level", "INFO"))
@@ -171,7 +173,7 @@ class Poppy(Sampler):
 
         self._close_pool()
 
-        if self.plot:
+        if self.plot and sampling_history is not None:
             sampling_history.plot().savefig(
                 os.path.join(self.outdir, f"{self.label}_sampling_history.png")
             )

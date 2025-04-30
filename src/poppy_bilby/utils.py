@@ -148,15 +148,16 @@ def samples_from_bilby_result(
     elif missing_parameters := set(result.priors.non_fixed_keys) - set(parameters):
         if bilby_priors is not None:
             # Sample the missing parameters
-            samples = sample_missing_parameters(
+            samples_df = sample_missing_parameters(
                 result,
                 bilby_priors,
                 parameters=parameters,
                 parameters_to_sample=parameters_to_sample,
             )
             # Check all parameters are present
-            if not all(p in result.posterior.columns for p in parameters):
+            if not all(p in samples_df for p in parameters):
                 raise ValueError("Not all parameters are present in the result.")
+            samples = samples_df[parameters].to_numpy()
         else:
             raise RuntimeError(
                 "Initial result does not contain all parameters and new priors "
@@ -243,19 +244,15 @@ def sample_missing_parameters(
         )
 
     logger.info(f"Found initial samples for: {common_parameters}")
-    initial_samples = bilby_result.posterior[common_parameters].copy()
+    samples = bilby_result.posterior[common_parameters].copy()
 
     logger.info(f"Drawing samples for: {missing_parameters}")
 
-    new_samples = bilby_priors.sample_subset(
-        keys=missing_parameters, size=len(initial_samples)
-    )
+    new_samples = bilby_priors.sample_subset(keys=missing_parameters, size=len(samples))
 
     # Add the new samples to the initial samples
     for p in missing_parameters:
-        initial_samples[p] = new_samples[p]
-
-    samples = initial_samples[parameters].to_numpy()
+        samples[p] = new_samples[p]
     return samples
 
 

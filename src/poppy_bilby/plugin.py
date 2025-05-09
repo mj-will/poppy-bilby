@@ -60,7 +60,7 @@ class Poppy(Sampler):
     def read_initial_samples(
         self,
         initial_result_file: str,
-        parameters_to_sample: list[str] = None,
+        sample_from_prior: list[str] = None,
     ) -> Samples:
         """Read the initial samples from a bilby result file.
 
@@ -79,7 +79,7 @@ class Poppy(Sampler):
             initial_result,
             bilby_priors=self.priors,
             parameters=self.search_parameter_keys,
-            parameters_to_sample=parameters_to_sample,
+            sample_from_prior=sample_from_prior,
         )
         return initial_samples
 
@@ -91,7 +91,7 @@ class Poppy(Sampler):
         kwargs.pop("resume", None)
         n_samples = kwargs.pop("n_samples")
         n_initial_samples = kwargs.pop("n_initial_samples", 10_000)
-        parameters_to_sample = kwargs.pop("parameters_to_sample", None)
+        sample_from_prior = kwargs.pop("sample_from_prior", None)
 
         initial_result_file = kwargs.pop("initial_result_file", None)
         if initial_result_file is not None:
@@ -99,7 +99,7 @@ class Poppy(Sampler):
 
             initial_samples = self.read_initial_samples(
                 initial_result_file,
-                parameters_to_sample=parameters_to_sample,
+                sample_from_prior=sample_from_prior,
             )
         else:
             logger.info("Initial samples will be drawn from the prior.")

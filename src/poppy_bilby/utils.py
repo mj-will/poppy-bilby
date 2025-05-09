@@ -123,7 +123,7 @@ def samples_from_bilby_result(
     result: Result,
     parameters: str = None,
     bilby_priors: PriorDict = None,
-    parameters_to_sample: list[str] = None,
+    sample_from_prior: list[str] = None,
 ):
     """Get samples from a bilby result object.
 
@@ -136,23 +136,28 @@ def samples_from_bilby_result(
     bilby_priors : PriorDict
         The bilby prior object. If not specified, the initial result must contain
         all parameters.
-    parameters_to_sample : list[str]
+    sample_from_prior : list[str]
         A list of parameters to explicitly sample from the prior rather reading
         from the result.
     """
     from poppy.samples import Samples
     # TODO: add option to load nested samples
 
+    available_parameters = list(
+        result.posterior.columns[result.posterior.nunique() > 1]
+    )
+    logger.info(f"Available parameters in result: {available_parameters}")
+
     if parameters is None:
         parameters = result.priors.non_fixed_keys
-    elif missing_parameters := set(result.priors.non_fixed_keys) - set(parameters):
+    elif missing_parameters := set(parameters) - set(available_parameters):
         if bilby_priors is not None:
             # Sample the missing parameters
             samples_df = sample_missing_parameters(
                 result,
                 bilby_priors,
                 parameters=parameters,
-                parameters_to_sample=parameters_to_sample,
+                parameters_to_sample=sample_from_prior,
             )
             # Check all parameters are present
             if not all(p in samples_df for p in parameters):
@@ -227,14 +232,24 @@ def sample_missing_parameters(
     if parameters is None:
         parameters = bilby_priors.non_fixed_keys
 
-    initial_parameters = bilby_result.priors.non_fixed_keys
+    initial_parameters = list(bilby_result.priors.non_fixed_keys)
+    all_parameters = list(
+        bilby_result.posterior.columns[bilby_result.posterior.nunique() > 1]
+    )
     if parameters_to_sample is not None:
         logger.debug(f"Ignoring existing samples for: {parameters_to_sample}")
         for parameter in parameters_to_sample:
-            initial_parameters.remove(parameter)
+            # Remove the parameter from parameter lists if present
+            # This ensures that the parameter is sampled from the prior
+            if parameter in initial_parameters:
+                initial_parameters.remove(parameter)
+            if parameter in all_parameters:
+                all_parameters.remove(parameter)
+            else:
+                logger.debug(f"{parameter} not in the initial result.")
 
-    missing_parameters = list(set(parameters) - set(initial_parameters))
-    common_parameters = list(set(parameters) & set(initial_parameters))
+    missing_parameters = list(set(parameters) - set(all_parameters))
+    common_parameters = list(set(parameters) & set(all_parameters))
     extra_parameters = list(set(initial_parameters) - set(parameters))
 
     if extra_parameters:
@@ -248,11 +263,16 @@ def sample_missing_parameters(
 
     logger.info(f"Drawing samples for: {missing_parameters}")
 
-    new_samples = bilby_priors.sample_subset(keys=missing_parameters, size=len(samples))
+    if missing_parameters:
+        new_samples = bilby_priors.sample_subset(
+            keys=missing_parameters, size=len(samples)
+        )
 
-    # Add the new samples to the initial samples
-    for p in missing_parameters:
-        samples[p] = new_samples[p]
+        # Add the new samples to the initial samples
+        for p in missing_parameters:
+            samples[p] = new_samples[p]
+    else:
+        logger.info("No missing parameters to sample.")
     return samples
 
 

@@ -1,9 +1,13 @@
+from copy import deepcopy
+from typing import Callable
+
 from bilby.core.likelihood import Likelihood
 from bilby.core.prior import PriorDict
 from bilby.core.result import Result
 from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
+import importlib
 import os
 import numpy as np
 import pandas as pd
@@ -124,6 +128,7 @@ def samples_from_bilby_result(
     parameters: str = None,
     bilby_priors: PriorDict = None,
     sample_from_prior: list[str] = None,
+    conversion_function: Callable | None = None,
 ):
     """Get samples from a bilby result object.
 
@@ -143,6 +148,11 @@ def samples_from_bilby_result(
     from poppy.samples import Samples
     # TODO: add option to load nested samples
 
+    result = deepcopy(result)
+    if conversion_function is not None:
+        logger.info("Applying conversion function to the initial samples.")
+        result.posterior = conversion_function(result.posterior)
+
     available_parameters = list(
         result.posterior.columns[result.posterior.nunique() > 1]
     )
@@ -150,7 +160,10 @@ def samples_from_bilby_result(
 
     if parameters is None:
         parameters = result.priors.non_fixed_keys
-    elif missing_parameters := set(parameters) - set(available_parameters):
+    elif (
+        missing_parameters := set(parameters) - set(available_parameters)
+        or sample_from_prior
+    ):
         if bilby_priors is not None:
             # Sample the missing parameters
             samples_df = sample_missing_parameters(
@@ -353,3 +366,21 @@ def get_inputs_from_bilby_pipe_ini(
         prior_bounds=get_prior_bounds(bilby_priors, parameters),
         periodic_parameters=get_periodic_parameters(bilby_priors),
     )
+
+
+def get_function_from_path(path: str):
+    """Get a function from a module path.
+
+    Parameters
+    ----------
+    path : str
+        The path to the function, e.g. "module.submodule.function".
+
+    Returns
+    -------
+    Callable
+        The function object.
+    """
+    module_path, function_name = path.rsplit(".", 1)
+    module = importlib.import_module(module_path)
+    return getattr(module, function_name)

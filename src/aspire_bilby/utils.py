@@ -26,7 +26,7 @@ Inputs = namedtuple(
         "periodic_parameters",
     ],
 )
-"""Container for the inputs to the poppy sampler."""
+"""Container for the inputs to the aspire sampler."""
 
 Functions = namedtuple("Functions", ["log_likelihood", "log_prior"])
 """Container for the log likelihood and log prior functions."""
@@ -69,7 +69,7 @@ def _global_log_likelihood(x):
         return _global_functions.bilby_likelihood.log_likelihood()
 
 
-def get_poppy_functions(
+def get_aspire_functions(
     bilby_likelihood,
     bilby_priors,
     parameters,
@@ -145,7 +145,7 @@ def samples_from_bilby_result(
         A list of parameters to explicitly sample from the prior rather reading
         from the result.
     """
-    from poppy.samples import Samples
+    from aspire.samples import Samples
     # TODO: add option to load nested samples
 
     result = deepcopy(result)
@@ -203,7 +203,7 @@ def samples_from_bilby_priors(
     parameters : str
         The parameters to sample. If None, all parameters will be sampled.
     """
-    from poppy.samples import Samples
+    from aspire.samples import Samples
 
     if parameters is None:
         parameters = bilby_priors.non_fixed_keys
@@ -339,7 +339,7 @@ def get_inputs_from_bilby_pipe_ini(
     use_ratio: bool = False,
     suppress_bilby_logger: bool = True,
 ):
-    """Get the poppy inputs from a bilby_pipe ini file.
+    """Get the aspire inputs from a bilby_pipe ini file.
 
     Returns
     -------
@@ -355,7 +355,7 @@ def get_inputs_from_bilby_pipe_ini(
         config_file, data_dump_file, suppress_bilby_logger=suppress_bilby_logger
     )
     parameters = bilby_priors.non_fixed_keys
-    funcs = get_poppy_functions(
+    funcs = get_aspire_functions(
         bilby_likelihood, bilby_priors, parameters, use_ratio=use_ratio
     )
     return Inputs(

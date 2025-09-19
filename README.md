@@ -1,6 +1,6 @@
 # aspire-bilby
 
-Interface between the `aspire` post-processing sampler and `bilby`
+Interface between the `aspire` sampler and `bilby`
 
 ## Usage in bilby
 

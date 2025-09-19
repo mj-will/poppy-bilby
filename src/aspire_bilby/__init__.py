@@ -1,4 +1,4 @@
-"""poppy-bilby: A Bilby wrapper for poppy."""
+"""aspire-bilby: A Bilby wrapper for aspire."""
 
 from importlib.metadata import PackageNotFoundError, version
 

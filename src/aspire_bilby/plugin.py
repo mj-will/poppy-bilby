@@ -1,4 +1,4 @@
-"""Plugin for the poppy sampler in bilby."""
+"""Plugin for the aspire sampler in bilby."""
 
 from functools import partial
 from typing import Callable
@@ -10,13 +10,13 @@ from bilby.core.sampler.base_sampler import Sampler
 import copy
 import os
 import numpy as np
-import poppy
-from poppy.samples import Samples
-from poppy.utils import configure_logger, PoolHandler
+import aspire
+from aspire.samples import Samples
+from aspire.utils import configure_logger, PoolHandler
 
 from .utils import (
     get_function_from_path,
-    get_poppy_functions,
+    get_aspire_functions,
     get_prior_bounds,
     get_periodic_parameters,
     samples_from_bilby_result,
@@ -24,17 +24,17 @@ from .utils import (
 )
 
 
-class Poppy(Sampler):
-    """Bilby wrapper for poppy.
+class Aspire(Sampler):
+    """Bilby wrapper for aspire.
 
-    Poppy: https://github.com/mj-will/bayesian-poppy
+    Aspire: https://github.com/mj-will/bayesian-aspire
 
-    Since poppy is designed to be called in multiple steps, specific keyword
+    Since aspire is designed to be called in multiple steps, specific keyword
     arguments are used for each step:
     - `fit_kwargs` for the fit step
     - `sample_kwargs` for the sampling step
     In addition, there are custom arguments for handling e.g. logging:
-    - `poppy_log_level` for the logging level of poppy
+    - `aspire_log_level` for the logging level of aspire
     - `initial_conversion_function` for a function to convert the initial
     samples.
     - `sample_from_prior` to specify parameters that should be sampled from the
@@ -44,7 +44,7 @@ class Poppy(Sampler):
     It also includes a method to read initial samples from a bilby result
     """
 
-    sampler_name = "poppy"
+    sampler_name = "aspire"
     """
     Name of the sampler.
     """
@@ -52,7 +52,7 @@ class Poppy(Sampler):
     @property
     def external_sampler_name(self) -> str:
         """The name of package that provides the sampler."""
-        return "poppy"
+        return "aspire"
 
     @property
     def default_kwargs(self) -> dict:
@@ -164,7 +164,7 @@ class Poppy(Sampler):
         else:
             periodic_parameters = [p for p in get_periodic_parameters(self.priors)]
 
-        funcs = get_poppy_functions(
+        funcs = get_aspire_functions(
             self.likelihood,
             self.priors,
             self.search_parameter_keys,
@@ -185,15 +185,15 @@ class Poppy(Sampler):
             sample_kwargs["n_final_samples"] = n_final_samples
         fit_kwargs = kwargs.pop("fit_kwargs", {})
 
-        configure_logger(log_level=kwargs.pop("poppy_log_level", "INFO"))
+        configure_logger(log_level=kwargs.pop("aspire_log_level", "INFO"))
 
         # Should handle these properly
         kwargs.pop("npool", None)
         kwargs.pop("pool", None)
         kwargs.pop("sampling_seed", None)
 
-        logger.info(f"Creating poppy instance with kwargs: {kwargs}")
-        pop = poppy.Poppy(
+        logger.info(f"Creating aspire instance with kwargs: {kwargs}")
+        pop = aspire.Aspire(
             log_likelihood=log_likelihood_fn,
             log_prior=funcs.log_prior,
             dims=self.ndim,
@@ -203,11 +203,11 @@ class Poppy(Sampler):
             **kwargs,
         )
 
-        logger.info(f"Fitting poppy with kwargs: {fit_kwargs}")
+        logger.info(f"Fitting aspire with kwargs: {fit_kwargs}")
         history = pop.fit(initial_samples, **fit_kwargs)
 
         if self.plot:
-            from poppy.plot import plot_comparison
+            from aspire.plot import plot_comparison
 
             logger.debug("Plotting loss history")
             history.plot_loss().savefig(
@@ -298,7 +298,7 @@ class Poppy(Sampler):
     def _verify_kwargs_against_default_kwargs(self):
         """Check for additional kwargs that are not included in the defaults.
 
-        Since the arguments for poppy depend on the flow being used, arguments
+        Since the arguments for aspire depend on the flow being used, arguments
         are not removed if they are not present in the defaults.
         """
         args = self.default_kwargs

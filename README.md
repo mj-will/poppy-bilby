@@ -1,28 +1,77 @@
-# poppy-bilby
+# aspire-bilby
 
-Interface between the `poppy` post-processing sampler and `bilby`
+Interface between the `aspire` post-processing sampler and `bilby`
 
 ## Usage in bilby
 
+```python
+bilby.run_sampler(
+    sampler="aspire",
+    n_samples=1000,
+    n_final_samples=None,  # Optional, final number of samples to produce
+    sample_kwargs=dict(
+        sampler="smc"
+    ),
+    fit_kwargs=dict(
+        n_epochs=100,
+    ),
+    n_pool=4,
+)
+```
+
+### Using a set of samples
+
+```python
+
+from aspire.samples import Samples
+
+initial_samples = Samples(...)  # Define initial samples
+
+bilby.run_sampler(
+    sampler="aspire",
+    initial_samples=initial_samples,
+    ...
+)
+```
+
+### Using a bilby result file
+
+```python
+bilby.run_sampler(
+    sampler="aspire",
+    initial_result_file="<path to bilby result file>"
+    ...,
+)
+```
+
+### Sampling from the prior
+
+```python
+bilby.run_sampler(
+    sampler="aspire",
+    n_initial_samples=5000,  # Number of samples to draw from the prior, defaults to 10,000 if not specified
+    ...,
+)
+```
 
 
-## Using bilby objects with poppy
+## Using bilby objects with aspire
 
-`poppy-bilby` also provides functions for converting `bilby` likelihood and
+`aspire-bilby` also provides functions for converting `bilby` likelihood and
 prior objects into
 
 
 ```
 import bilby
-from poppy import Poppy
-from poppy_bilby.utils import samples_from_bilby_result, get_poppy_functions
+from aspire import Aspire
+from aspire_bilby.utils import samples_from_bilby_result, get_aspire_functions
 
 likelihood = ...    # Define bilby likelihood
 priors = ...        # Define bilby priors
 
 result = bilby.core.utils.read_in_result(...)    # Read in bilby result
 
-functions = get_poppy_functions(
+functions = get_aspire_functions(
     likelihood,
     priors,
     parameters=priors.non_fixed_keys,
@@ -30,11 +79,26 @@ functions = get_poppy_functions(
 
 initial_samples = samples_from_bilby_result(result)
 
-poppy = Poppy(
+aspire = Aspire(
     log_likelihood=functions.log_likelihood,
     log_prior=functions.log_prior,
     dims=len(initial_samples.parameters),
 )
 
-history = poppy.fit(initial_samples)
+history = aspire.fit(initial_samples)
 ```
+
+## Usage in bilby_pipe
+
+`aspire` can be used with `bilby_pipe` as you would any other sampler:
+
+```
+sampler = "aspire"
+sampler_kwargs = {
+    "initial_result_file": "path_to_file",
+    "sample_kwargs": {...},
+    "fit_kwargs": {...},
+}
+```
+
+If using transfer files, you may also need to add the initial result file to the `additional-transfer-paths`.

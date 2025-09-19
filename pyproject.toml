@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "setuptools-scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "poppy-bilby"
+name = "aspire-bilby"
 authors = [
     {name = "Michael J. Williams", email = "michaeljw1@googlemail.com"},
 ]
@@ -16,7 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "bilby>=2.3.0",
-    "poppy",
+    "aspire-inference",
 ]
 
 dynamic = ["version"]
@@ -32,4 +32,4 @@ test = [
 line-length = 79
 
 [project.entry-points."bilby.samplers"]
-poppy = "poppy_bilby.plugin:Poppy"
+aspire = "aspire_bilby.plugin:Aspire"

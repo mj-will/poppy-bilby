@@ -45,7 +45,7 @@ def sampler_kwargs():
         n_samples=100,
         sample_kwargs=dict(
             sampler="smc",
-        )
+        ),
     )
 
 
@@ -81,11 +81,7 @@ def existing_result(request, bilby_priors, tmp_path):
 
 
 def test_run_sampler(
-    bilby_likelihood,
-    bilby_priors,
-    tmp_path,
-    sampler_kwargs,
-    existing_result
+    bilby_likelihood, bilby_priors, tmp_path, sampler_kwargs, existing_result
 ):
     outdir = tmp_path / "test_run_sampler"
 

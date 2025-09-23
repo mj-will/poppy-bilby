@@ -1,8 +1,20 @@
 # aspire-bilby
 
-Interface between the `aspire` sampler and `bilby`
+Interface between `aspire` and `bilby`.
+
+## Installation
+
+`aspire-bilby` is available via `pypi`:
+
+```
+pip install aspire-bilby
+```
 
 ## Usage in bilby
+
+`aspire` can be used just like any other sampler in `bilby` and supports
+`multiprocessing` via the `n_pool` keyword argument.
+
 
 ```python
 bilby.run_sampler(
@@ -61,7 +73,7 @@ bilby.run_sampler(
 prior objects into
 
 
-```
+```python
 import bilby
 from aspire import Aspire
 from aspire_bilby.utils import samples_from_bilby_result, get_aspire_functions

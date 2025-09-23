@@ -17,6 +17,8 @@ classifiers = [
 dependencies = [
     "bilby>=2.3.0",
     "aspire-inference",
+    "numpy",
+    "pandas",
 ]
 
 dynamic = ["version"]

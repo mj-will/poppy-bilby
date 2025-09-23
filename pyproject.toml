@@ -27,6 +27,15 @@ dynamic = ["version"]
 test = [
     "pytest",
 ]
+torch = [
+    "aspire-inference[torch]",
+]
+jax = [
+    "aspire-inference[jax]",
+]
+minipcn = [
+    "minipcn",
+]
 
 [tool.setuptools_scm]
 

@@ -319,9 +319,10 @@ def load_bilby_pipe_ini(
     from bilby_pipe.utils import logger as bilby_pipe_logger
     from bilby.core.utils.log import logger as bilby_logger
 
-    with temporary_logger_level(
-        bilby_pipe_logger, 0 if suppress_bilby_logger else None
-    ), temporary_logger_level(bilby_logger, 0 if suppress_bilby_logger else None):
+    with (
+        temporary_logger_level(bilby_pipe_logger, 0 if suppress_bilby_logger else None),
+        temporary_logger_level(bilby_logger, 0 if suppress_bilby_logger else None),
+    ):
         parser = data_analysis.create_analysis_parser()
         args, unknown_args = data_analysis.parse_args(
             [config_file, "--data-dump-file", data_dump_file], parser

@@ -10,8 +10,29 @@ def flow_backend(request):
     return request.param
 
 
+@pytest.fixture(params=["importance", "emcee", "smc"])
+def sample_kwargs(request):
+    """Kwargs for the sampler method in aspire"""
+    if request.param == "importance":
+        return dict(
+            sampler="importance",
+        )
+    elif request.param == "emcee":
+        return dict(
+            sampler="emcee",
+            nwalkers=10,
+            nsteps=20,
+        )
+    elif request.param == "smc":
+        return dict(
+            sampler="smc",
+        )
+    else:
+        raise ValueError(f"Unknown sampler: {request.param}")
+
+
 @pytest.fixture()
-def sampler_kwargs(flow_backend):
+def sampler_kwargs(flow_backend, sample_kwargs):
     if flow_backend == "zuko":
         fit_kwargs = dict(
             n_epochs=10,
@@ -22,14 +43,7 @@ def sampler_kwargs(flow_backend):
         )
     else:
         raise ValueError(f"Unknown flow backend: {flow_backend}")
-    return dict(
-        n_samples=100,
-        fit_kwargs=fit_kwargs,
-        sample_kwargs=dict(
-            sampler="smc",
-            adaptive=True,
-        ),
-    )
+    return dict(n_samples=100, fit_kwargs=fit_kwargs, sample_kwargs=sample_kwargs)
 
 
 @pytest.fixture(params=[None, "samples", "result"])
@@ -70,6 +84,7 @@ def test_run_sampler(
     sampler_kwargs,
     existing_result,
     flow_backend,
+    conversion_function,
 ):
     outdir = tmp_path / "test_run_sampler"
     outdir.mkdir(parents=True, exist_ok=True)
@@ -82,6 +97,7 @@ def test_run_sampler(
         sampler="aspire",
         outdir=outdir,
         flow_backend=flow_backend,
+        conversion_function=conversion_function,
         **sampler_kwargs,
     )
 

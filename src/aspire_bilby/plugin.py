@@ -71,7 +71,7 @@ class Aspire(Sampler):
     def default_kwargs(self) -> dict:
         """Dictionary of default keyword arguments."""
         return dict(
-            n_samples=1000,
+            n_samples=None,
             initial_result_file=None,
             enable_checkpointing=True,
             flow_matching=False,
@@ -292,7 +292,6 @@ class Aspire(Sampler):
             samples, sampling_history = aspire.sample_posterior(
                 n_samples, return_history=True, **sample_kwargs
             )
-            samples = samples.to_numpy()
 
         self._close_pool()
 
@@ -322,20 +321,28 @@ class Aspire(Sampler):
         from aspire.samples import Samples, SMCSamples, MCMCSamples, PTMCMCSamples
 
         if isinstance(samples, PTMCMCSamples):
-            # Get the cold chain samples
-            posterior_samples = samples.get_cold_chain()
+            posterior_samples = samples.cold_chain()
             self.result.samples = posterior_samples.x
             self.result.log_likelihood_evaluations = posterior_samples.log_likelihood
             self.result.log_prior_evaluations = posterior_samples.log_prior
-            self.result.walkers = samples.x
+            self.result.walkers = samples.chain
             self.result.nburn = samples.burn_in
-            self.result.nthin = samples.thin
+            acor_time = samples.autocorrelation_time
+            if acor_time is not None:
+                self.result.max_autocorrelation_time = np.max(acor_time)
+                self.result.meta_data["autocorrelation_time"] = acor_time
+            self.result.meta_data["ntemps"] = samples.n_temps
+            self.result.meta_data["thin"] = samples.thin
             log_z, log_z_err = samples.log_evidence_stepping_stone(0)
+            logger.debug(f"Stepping stone log evidence: {log_z} +/- {log_z_err}")
             self.result.log_evidence = log_z
             self.result.log_evidence_err = log_z_err
             log_z_ti, log_z_err_ti = samples.log_evidence_thermodynamic_integration(0)
-            _, log_z_err_ti_coarse = (
-                samples.log_evidence_thermodynamic_integration_error(method="coarse")
+            _, log_z_err_ti_coarse = samples.log_evidence_thermodynamic_integration(
+                method="coarse"
+            )
+            logger.debug(
+                f"Thermodynamic integration log evidence: {log_z_ti} +/- {log_z_err_ti} (coarse error: {log_z_err_ti_coarse})"
             )
             self.result.meta_data["log_evidence_ti"] = log_z_ti
             self.result.meta_data["log_evidence_err_ti"] = log_z_err_ti

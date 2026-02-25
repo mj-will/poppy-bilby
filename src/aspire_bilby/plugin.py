@@ -319,9 +319,28 @@ class Aspire(Sampler):
 
         Handles different types of samples objects and adds the appropriate attributes to the result.
         """
-        from aspire.samples import Samples, SMCSamples, MCMCSamples
+        from aspire.samples import Samples, SMCSamples, MCMCSamples, PTMCMCSamples
 
-        if isinstance(samples, MCMCSamples):
+        if isinstance(samples, PTMCMCSamples):
+            # Get the cold chain samples
+            posterior_samples = samples.get_cold_chain()
+            self.result.samples = posterior_samples.x
+            self.result.log_likelihood_evaluations = posterior_samples.log_likelihood
+            self.result.log_prior_evaluations = posterior_samples.log_prior
+            self.result.walkers = samples.x
+            self.result.nburn = samples.burn_in
+            self.result.nthin = samples.thin
+            log_z, log_z_err = samples.log_evidence_stepping_stone(0)
+            self.result.log_evidence = log_z
+            self.result.log_evidence_err = log_z_err
+            log_z_ti, log_z_err_ti = samples.log_evidence_thermodynamic_integration(0)
+            _, log_z_err_ti_coarse = (
+                samples.log_evidence_thermodynamic_integration_error(method="coarse")
+            )
+            self.result.meta_data["log_evidence_ti"] = log_z_ti
+            self.result.meta_data["log_evidence_err_ti"] = log_z_err_ti
+            self.result.meta_data["log_evidence_err_ti_coarse"] = log_z_err_ti_coarse
+        elif isinstance(samples, MCMCSamples):
             self.result.samples = samples.x
             self.result.log_likelihood_evaluations = samples.log_likelihood
             self.result.log_prior_evaluations = samples.log_prior

@@ -75,7 +75,7 @@ def _global_log_likelihood(x):
             return _global_functions.bilby_likelihood.log_likelihood_ratio(theta)
         except TypeError:
             _global_functions.bilby_likelihood.parameters.update(theta)
-            return _global_functions.bilby_likelihood.log_likelihood()
+            return _global_functions.bilby_likelihood.log_likelihood_ratio()
     else:
         try:
             return _global_functions.bilby_likelihood.log_likelihood(theta)

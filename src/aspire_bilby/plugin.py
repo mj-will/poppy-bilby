@@ -22,6 +22,8 @@ from .utils import (
     get_periodic_parameters,
     samples_from_bilby_result,
     samples_from_bilby_priors,
+    update_global_functions,
+    _initialize_fixed_parameters,
 )
 
 
@@ -440,3 +442,40 @@ class Aspire(Sampler):
                 if self._npool > 1:
                     kwargs["npool"] = self._npool
         super()._translate_kwargs(kwargs)
+
+    def _setup_pool(self):
+        # TODO: this should be updated once https://github.com/bilby-dev/bilby/pull/1009 is in a release
+
+        # In bilby<2.7 samplers don't have parameters and the global variable
+        # function doesn't need it.
+        parameters = self._search_parameter_keys
+        fixed_parameters = _initialize_fixed_parameters(self.priors)
+
+        if self.kwargs.get("pool", None) is not None:
+            logger.info("Using user defined pool.")
+            self.pool = self.kwargs["pool"]
+        elif self.npool is not None and self.npool > 1:
+            logger.info(f"Setting up multiproccesing pool with {self.npool} processes")
+            import multiprocessing
+
+            self.pool = multiprocessing.Pool(
+                processes=self.npool,
+                initializer=update_global_functions,
+                initargs=(
+                    self.likelihood,
+                    self.priors,
+                    fixed_parameters,
+                    parameters,
+                    self.use_ratio,
+                ),
+            )
+        else:
+            self.pool = None
+        update_global_functions(
+            bilby_likelihood=self.likelihood,
+            bilby_priors=self.priors,
+            fixed_parameters=fixed_parameters,
+            parameters=parameters,
+            use_ratio=self.use_ratio,
+        )
+        self.kwargs["pool"] = self.pool

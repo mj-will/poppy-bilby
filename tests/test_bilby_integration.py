@@ -1,3 +1,4 @@
+import multiprocessing as mp
 from unittest.mock import patch
 
 import bilby
@@ -102,19 +103,21 @@ def test_run_sampler(
     )
 
 
+@pytest.mark.parametrize("start_method", ["fork", "spawn", "forkserver"])
 def test_run_sampler_pool(
     bilby_likelihood,
     bilby_priors,
     tmp_path,
     sampler_kwargs,
     flow_backend,
+    start_method,
 ):
-    from multiprocessing.dummy import Pool
-
     outdir = tmp_path / "test_run_sampler_pool"
     outdir.mkdir(parents=True, exist_ok=True)
 
-    with patch("multiprocessing.Pool", new=Pool):
+    ctx = mp.get_context(start_method)
+
+    with patch("multiprocessing.Pool", new=ctx.Pool):
         bilby.run_sampler(
             likelihood=bilby_likelihood,
             priors=bilby_priors,

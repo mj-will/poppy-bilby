@@ -420,7 +420,9 @@ def get_inputs_from_bilby_pipe_ini(
         config_file, data_dump_file, suppress_bilby_logger=suppress_bilby_logger
     )
     parameters = bilby_priors.non_fixed_keys
-    funcs = get_aspire_functions(bilby_likelihood, bilby_priors, use_ratio=use_ratio)
+    funcs = get_aspire_functions(
+        bilby_likelihood, bilby_priors, parameters=parameters, use_ratio=use_ratio
+    )
     return Inputs(
         log_likelihood=funcs.log_likelihood,
         log_prior=funcs.log_prior,

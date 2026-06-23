@@ -52,7 +52,9 @@ class Aspire(Sampler):
     argument in :code:`sample_kwargs`, that file will be used instead. The
     checkpoint file is updated every :code:`checkpoint_every` iterations
     (default 1). If the checkpoint file already exists, Aspire will resume
-    from the last checkpoint.
+    from the last checkpoint. If `resume` is set to `False`, the checkpoint file
+    then any existing checkpoint file will be ignored and overwritten, and the
+    sampler will start from scratch.
     """
 
     sampler_name = "aspire"
@@ -69,7 +71,7 @@ class Aspire(Sampler):
     def default_kwargs(self) -> dict:
         """Dictionary of default keyword arguments."""
         return dict(
-            n_samples=1000,
+            n_samples=None,
             initial_result_file=None,
             enable_checkpointing=True,
             flow_matching=False,
@@ -222,10 +224,13 @@ class Aspire(Sampler):
         # Make sure the output directory exists
         Path(self.outdir).mkdir(parents=True, exist_ok=True)
 
+        resume = kwargs.pop("resume", False)
+
         if (
             checkpoint_file.exists()
             and checkpoint_file.stat().st_size > 0
             and enable_checkpointing
+            and resume
         ):
             logger.info(f"Resuming from checkpoint file: {checkpoint_file}")
             aspire = AspireSampler.resume_from_file(
@@ -287,7 +292,6 @@ class Aspire(Sampler):
             samples, sampling_history = aspire.sample_posterior(
                 n_samples, return_history=True, **sample_kwargs
             )
-            samples = samples.to_numpy()
 
         self._close_pool()
 
@@ -296,37 +300,11 @@ class Aspire(Sampler):
                 Path(self.outdir) / f"{self.label}_sampling_history.png"
             )
 
-        if hasattr(samples, "log_w") and samples.log_w is not None:
-            iid_samples = samples.rejection_sample(rng=random.rng)
-        else:
-            iid_samples = samples
-
-        self.result.samples = iid_samples.x
-
-        # Only 'nested samples' if samples have weights:
-
-        if hasattr(samples, "log_w") and samples.log_w is not None:
-            # If weights are all the same, set them to None to avoid confusion
-            # Only include the samples in the initial dataframe
-            self.result.nested_samples = samples.to_dataframe(include=[])
-            self.result.nested_samples["log_likelihood"] = samples.log_likelihood
-            self.result.nested_samples["log_prior"] = samples.log_prior
-            if hasattr(samples, "weights") and samples.weights is not None:
-                self.result.nested_samples["weights"] = samples.weights
-
-        self.result.log_likelihood_evaluations = iid_samples.log_likelihood
-        self.result.log_prior_evaluations = iid_samples.log_prior
-        if hasattr(samples, "log_evidence"):
-            self.result.log_evidence = iid_samples.log_evidence or np.nan
-        else:
-            self.result.log_evidence = np.nan
-        if hasattr(samples, "log_evidence_error"):
-            self.result.log_evidence_err = iid_samples.log_evidence_error or np.nan
-        else:
-            self.result.log_evidence_err = np.nan
-
+        self.add_samples_to_result(samples)
         self.result.num_likelihood_evaluations = aspire.n_likelihood_evaluations
 
+        # Fix the initial samples in the results meta data since bilby does
+        # not know how to save them to result object
         if self.kwargs.get("initial_samples") is not None:
             logger.debug("Encoding initial samples for hdf5")
             self.kwargs["initial_samples"] = self.kwargs[
@@ -334,6 +312,73 @@ class Aspire(Sampler):
             ]._encode_for_hdf5(flat=False)
 
         return self.result
+
+    def add_samples_to_result(self, samples: Samples):
+        """Add samples to the result object.
+
+        Handles different types of samples objects and adds the appropriate attributes to the result.
+        """
+        from aspire.samples import Samples, SMCSamples, MCMCSamples, PTMCMCSamples
+
+        if isinstance(samples, PTMCMCSamples):
+            posterior_samples = samples.cold_chain()
+            self.result.samples = posterior_samples.x
+            self.result.log_likelihood_evaluations = posterior_samples.log_likelihood
+            self.result.log_prior_evaluations = posterior_samples.log_prior
+            self.result.walkers = samples.chain
+            self.result.nburn = samples.burn_in
+            acor_time = samples.autocorrelation_time
+            if acor_time is not None:
+                self.result.max_autocorrelation_time = np.max(acor_time)
+                self.result.meta_data["autocorrelation_time"] = acor_time
+            self.result.meta_data["ntemps"] = samples.n_temps
+            self.result.meta_data["thin"] = samples.thin
+            log_z, log_z_err = samples.log_evidence_stepping_stone(0)
+            logger.debug(f"Stepping stone log evidence: {log_z} +/- {log_z_err}")
+            self.result.log_evidence = log_z
+            self.result.log_evidence_err = log_z_err
+            log_z_ti, log_z_err_ti = samples.log_evidence_thermodynamic_integration(0)
+            _, log_z_err_ti_coarse = samples.log_evidence_thermodynamic_integration(
+                method="coarse"
+            )
+            logger.debug(
+                f"Thermodynamic integration log evidence: {log_z_ti} +/- {log_z_err_ti} (coarse error: {log_z_err_ti_coarse})"
+            )
+            self.result.meta_data["log_evidence_ti"] = log_z_ti
+            self.result.meta_data["log_evidence_err_ti"] = log_z_err_ti
+            self.result.meta_data["log_evidence_err_ti_coarse"] = log_z_err_ti_coarse
+        elif isinstance(samples, MCMCSamples):
+            self.result.samples = samples.x
+            self.result.log_likelihood_evaluations = samples.log_likelihood
+            self.result.log_prior_evaluations = samples.log_prior
+            self.result.nburn = samples.burn_in
+            self.result.nthin = samples.thin
+            self.result.log_evidence = np.nan
+            self.result.log_evidence_err = np.nan
+        elif isinstance(samples, SMCSamples):
+            self.result.samples = samples.x
+            self.result.log_likelihood_evaluations = samples.log_likelihood
+            self.result.log_prior_evaluations = samples.log_prior
+            self.result.log_evidence = samples.log_evidence
+            self.result.log_evidence_err = samples.log_evidence_error
+        elif isinstance(samples, Samples):
+            if hasattr(samples, "log_w") and samples.log_w is not None:
+                iid_samples = samples.rejection_sample(rng=random.rng)
+            else:
+                iid_samples = samples
+            self.result.samples = iid_samples.x
+            self.result.log_likelihood_evaluations = iid_samples.log_likelihood
+            self.result.log_prior_evaluations = iid_samples.log_prior
+            if hasattr(samples, "log_evidence"):
+                self.result.log_evidence = iid_samples.log_evidence or np.nan
+            else:
+                self.result.log_evidence = np.nan
+            if hasattr(samples, "log_evidence_error"):
+                self.result.log_evidence_err = iid_samples.log_evidence_error or np.nan
+            else:
+                self.result.log_evidence_err = np.nan
+        else:
+            raise TypeError(f"Unsupported samples type: {type(samples)}")
 
     @classmethod
     def get_expected_outputs(cls, outdir=None, label=None):

@@ -16,13 +16,21 @@ def rng():
 
 
 def model(x, m, c):
+    # Assert d = |m| + |c| is satisfied and d is in the prior range
+    d = abs(m) + abs(c)
+    assert 0.5 <= d <= 5
     return m * x + c
 
 
-def conversion_func(parameters):
+def conversion_func(parameters, likelihood=None, priors=None):
     # d = |m| + |c|
     parameters["d"] = abs(parameters["m"]) + abs(parameters["c"])
     return parameters
+
+
+@pytest.fixture()
+def conversion_function():
+    return conversion_func
 
 
 @pytest.fixture()
@@ -40,5 +48,5 @@ def bilby_priors():
     priors = bilby.core.prior.PriorDict(conversion_function=conversion_func)
     priors["m"] = bilby.core.prior.Uniform(0, 5, boundary="periodic")
     priors["c"] = bilby.core.prior.Uniform(-2, 2, boundary="reflective")
-    # priors["d"] = bilby.core.prior.Constraint(name="d", minimum=0, maximum=5)
+    priors["d"] = bilby.core.prior.Constraint(name="d", minimum=0.5, maximum=5)
     return priors

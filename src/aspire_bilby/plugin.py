@@ -210,7 +210,10 @@ class Aspire(Sampler):
             sample_kwargs["n_final_samples"] = n_final_samples
         fit_kwargs = kwargs.pop("fit_kwargs", {})
 
-        configure_logger(log_level=kwargs.pop("aspire_log_level", "INFO"))
+        configure_logger(
+            log_level=kwargs.pop("aspire_log_level", "INFO"),
+            stream=kwargs.pop("aspire_log_stream", None),
+        )
 
         # Should handle these properly
         kwargs.pop("npool", None)

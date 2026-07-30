@@ -1,9 +1,11 @@
 import multiprocessing as mp
+from contextlib import nullcontext
 from unittest.mock import patch
 
 import bilby
 import numpy as np
 import pytest
+from aspire import Aspire as AspireSampler
 
 
 @pytest.fixture(params=["zuko", "flowjax"])
@@ -127,3 +129,46 @@ def test_run_sampler_pool(
             npool=2,
             **sampler_kwargs,
         )
+
+
+def test_run_sampler_with_prior_proposal(
+    bilby_likelihood,
+    monkeypatch,
+    tmp_path,
+):
+    bilby_priors = bilby.core.prior.PriorDict(
+        {
+            "m": bilby.core.prior.Uniform(0.5, 1.0),
+            "c": bilby.core.prior.Uniform(0.0, 1.0),
+        }
+    )
+    label = "prior_proposal"
+    checkpoint_file = tmp_path / f"{label}_aspire_checkpoint.h5"
+    checkpoint_file.write_bytes(b"existing checkpoint")
+    checkpoint_options = {}
+
+    def auto_checkpoint(aspire, path, **kwargs):
+        checkpoint_options.update(kwargs)
+        return nullcontext(aspire)
+
+    monkeypatch.setattr(AspireSampler, "auto_checkpoint", auto_checkpoint)
+
+    result = bilby.run_sampler(
+        likelihood=bilby_likelihood,
+        priors=bilby_priors,
+        sampler="aspire",
+        proposal="prior",
+        n_samples=100,
+        sample_kwargs={
+            "sampler": "importance",
+            "checkpoint_file": checkpoint_file,
+        },
+        resume=True,
+        outdir=tmp_path,
+        label=label,
+    )
+
+    assert result.samples.shape[1] == len(bilby_priors.non_fixed_keys)
+    assert np.all(np.isfinite(result.samples))
+    assert checkpoint_options["save_proposal"] is False
+    assert checkpoint_options["resume"] is True

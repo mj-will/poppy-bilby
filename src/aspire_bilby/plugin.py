@@ -25,6 +25,7 @@ from .utils import (
     update_global_functions,
     _initialize_fixed_parameters,
 )
+from .proposals import BilbyPriorProposal
 
 
 class Aspire(Sampler):
@@ -42,6 +43,7 @@ class Aspire(Sampler):
     samples.
     - `sample_from_prior` to specify parameters that should be sampled from the
     prior regardless of whether they are in the initial result file.
+    - `proposal="prior"` to use the Bilby prior directly without fitting a flow.
 
 
     It also includes a method to read initial samples from a bilby result.
@@ -78,6 +80,7 @@ class Aspire(Sampler):
             enable_checkpointing=True,
             flow_matching=False,
             npool=None,
+            proposal=None,
         )
 
     def get_conversion_function(
@@ -136,10 +139,21 @@ class Aspire(Sampler):
 
         kwargs = copy.deepcopy(self.kwargs)
 
-        kwargs.pop("resume", None)
+        resume = kwargs.pop("resume", False)
         n_samples = kwargs.pop("n_samples")
         n_initial_samples = kwargs.pop("n_initial_samples", 10_000)
         sample_from_prior = kwargs.pop("sample_from_prior", None)
+        proposal = kwargs.pop("proposal", None)
+        use_prior_proposal = isinstance(proposal, str) and proposal == "prior"
+        if isinstance(proposal, str) and not use_prior_proposal:
+            raise ValueError(
+                "Unknown proposal string. Use 'prior' or pass a proposal object."
+            )
+        if use_prior_proposal:
+            proposal = BilbyPriorProposal(
+                self.priors,
+                parameters=self.search_parameter_keys,
+            )
 
         initial_result_file = kwargs.pop("initial_result_file", None)
         initial_samples = kwargs.pop("initial_samples", None)
@@ -153,7 +167,19 @@ class Aspire(Sampler):
         conversion_function = self.get_conversion_function(
             kwargs.pop("initial_conversion_function", None)
         )
-        if initial_result_file is not None:
+        if use_prior_proposal:
+            ignored_initial_options = (
+                initial_result_file is not None
+                or initial_samples is not None
+                or sample_from_prior is not None
+                or conversion_function is not None
+            )
+            if ignored_initial_options:
+                logger.warning(
+                    "Initial sample options are ignored when proposal='prior'."
+                )
+            initial_samples = None
+        elif initial_result_file is not None:
             logger.info(f"Initial samples will be read from {initial_result_file}.")
 
             initial_samples = self.read_initial_samples(
@@ -209,6 +235,8 @@ class Aspire(Sampler):
         if n_final_samples := kwargs.pop("n_final_samples", None):
             sample_kwargs["n_final_samples"] = n_final_samples
         fit_kwargs = kwargs.pop("fit_kwargs", {})
+        if use_prior_proposal and fit_kwargs:
+            logger.warning("fit_kwargs are ignored when proposal='prior'.")
 
         configure_logger(
             log_level=kwargs.pop("aspire_log_level", "INFO"),
@@ -224,19 +252,21 @@ class Aspire(Sampler):
             Path(self.outdir) / f"{self.label}_aspire_checkpoint.h5"
         )
         checkpoint_every = sample_kwargs.pop("checkpoint_every", 1)
-        checkpoint_file = sample_kwargs.pop("checkpoint_file", default_checkpoint_file)
+        checkpoint_file = Path(
+            sample_kwargs.pop("checkpoint_file", default_checkpoint_file)
+        )
 
         # Make sure the output directory exists
         Path(self.outdir).mkdir(parents=True, exist_ok=True)
 
-        resume = kwargs.pop("resume", False)
-
-        if (
+        resume_from_checkpoint = (
             checkpoint_file.exists()
             and checkpoint_file.stat().st_size > 0
             and enable_checkpointing
             and resume
-        ):
+        )
+
+        if resume_from_checkpoint and not use_prior_proposal:
             logger.info(f"Resuming from checkpoint file: {checkpoint_file}")
             aspire = AspireSampler.resume_from_file(
                 checkpoint_file,
@@ -252,32 +282,35 @@ class Aspire(Sampler):
                 parameters=self.search_parameter_keys,
                 prior_bounds=prior_bounds,
                 periodic_parameters=periodic_parameters,
+                proposal=proposal,
                 **kwargs,
             )
 
-            logger.info(f"Fitting aspire with kwargs: {fit_kwargs}")
-            history = aspire.fit(initial_samples, **fit_kwargs)
+            history = None
+            if not use_prior_proposal:
+                logger.info(f"Fitting aspire with kwargs: {fit_kwargs}")
+                history = aspire.fit(initial_samples, **fit_kwargs)
 
-            if self.plot:
+            if self.plot and history is not None:
                 from aspire.plot import plot_comparison
 
                 logger.debug("Plotting loss history")
                 history.plot_loss().savefig(
                     Path(self.outdir) / f"{self.label}_loss.png"
                 )
-                logger.debug("Plotting samples from flow")
-                flow_samples = aspire.sample_flow(10_000)
+                logger.debug("Plotting samples from proposal")
+                proposal_samples = aspire.sample_proposal(10_000)
 
                 fig = plot_comparison(
                     initial_samples,
-                    flow_samples,
+                    proposal_samples,
                     per_samples_kwargs=[
                         dict(include_weights=False, color="C0"),
                         dict(include_weights=False, color="C1"),
                     ],
-                    labels=["Initial samples", "Flow samples"],
+                    labels=["Initial samples", "Proposal samples"],
                 )
-                fig.savefig(Path(self.outdir) / f"{self.label}_flow.png")
+                fig.savefig(Path(self.outdir) / f"{self.label}_proposal.png")
 
         logger.info(f"Sampling from posterior with kwargs: {sample_kwargs}")
 
@@ -288,7 +321,10 @@ class Aspire(Sampler):
                 f"Enabling checkpointing with checkpoint file '{checkpoint_file}' every {checkpoint_every} iterations."
             )
             checkpoint_ctx = aspire.auto_checkpoint(
-                checkpoint_file, every=checkpoint_every
+                checkpoint_file,
+                every=checkpoint_every,
+                save_proposal=not use_prior_proposal,
+                resume=resume_from_checkpoint and use_prior_proposal,
             )
         else:
             checkpoint_ctx = contextlib.nullcontext(aspire)

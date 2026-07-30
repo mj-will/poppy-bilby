@@ -64,6 +64,29 @@ Starting from precomputed samples
         fit_kwargs={...},
     )
 
+Using the prior as the proposal
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Bilby prior can be used directly as Aspire's proposal distribution. This
+avoids training a normalizing flow and does not require initial samples:
+
+.. code-block:: python
+
+    bilby.run_sampler(
+        sampler="aspire",
+        proposal="prior",
+        n_samples=1000,
+        sample_kwargs={
+            "sampler": "importance",
+        },
+    )
+
+Sampling and log-density evaluation are delegated to the complete Bilby
+``PriorDict``, including its conversion function and constraints. With
+importance sampling, using the prior as the proposal means the importance
+weights are determined by the likelihood. This can be inefficient when the
+posterior occupies only a small fraction of the prior volume.
+
 Converting bilby objects for aspire
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -111,6 +134,10 @@ In the ``billy`` integration, checkpoints are saved to
     If the result file already exists and contains a checkpoint, sampling will
     resume from that checkpoint automatically. If you want to always start fresh,
     delete or rename the existing checkpoint file first.
+
+When ``proposal="prior"``, the prior proposal is reconstructed from the live
+Bilby ``PriorDict`` on resume. It is intentionally not serialized into the
+Aspire checkpoint, ensuring custom prior conversion functions are preserved.
 
 Usage in bilby_pipe
 -------------------

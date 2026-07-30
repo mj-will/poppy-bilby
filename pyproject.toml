@@ -16,7 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "bilby>=2.7.0",
-    "aspire-inference>=0.1.0a16",
+    "aspire-inference>=0.1.0a22",
     "numpy",
     "pandas",
 ]

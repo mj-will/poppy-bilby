@@ -10,13 +10,13 @@ authors = [
 description = ""
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
     "bilby>=2.7.0",
-    "aspire-inference>=0.1.0a16",
+    "aspire-inference>=0.1.0",
     "numpy",
     "pandas",
 ]
@@ -34,7 +34,7 @@ jax = [
     "aspire-inference[jax]",
 ]
 minipcn = [
-    "minipcn[array-api]>=0.2.0a3",
+    "minipcn>=0.2.0",
 ]
 
 [tool.setuptools_scm]
